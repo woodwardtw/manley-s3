@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lake Champlain Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: Arial, sans-serif;
+      background: #f1f5f8;
+      color: #1f2937;
+    }
+    #map {
+      height: calc(100vh - 80px);
+      width: 100%;
+    }
+    header {
+      padding: 16px 24px;
+      background: #0f172a;
+      color: #f8fafc;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.5rem;
+    }
+    header p {
+      margin: 6px 0 0;
+      font-size: 0.95rem;
+      color: #cbd5e1;
+    }
+    .legend {
+      position: absolute;
+      right: 16px;
+      top: 100px;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.92);
+      padding: 12px 14px;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+      line-height: 1.5;
+      max-width: 260px;
+    }
+    .legend strong {
+      display: block;
+      margin-bottom: 8px;
+      color: #0f172a;
+    }
+    .legend li {
+      margin-bottom: 6px;
+    }
+    .leaflet-popup-content-wrapper,
+    .leaflet-popup-content {
+      max-width: 90vw !important;
+      width: auto !important;
+      box-sizing: border-box;
+    }
+    .leaflet-popup-content img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }
+    .lightbox {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(15, 23, 42, 0.8);
+      padding: 20px;
+      z-index: 2000;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 180ms ease, visibility 180ms ease;
+    }
+    .lightbox.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+    .lightbox-panel {
+      position: relative;
+      width: min(90vw, 1100px);
+      max-height: 90vh;
+      background: #fff;
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 32px 90px rgba(15, 23, 42, 0.4);
+    }
+    .lightbox-close {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      width: 38px;
+      height: 38px;
+      border: none;
+      background: rgba(15, 23, 42, 0.85);
+      color: #fff;
+      font-size: 1.4rem;
+      border-radius: 50%;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .lightbox-panel figure {
+      margin: 0;
+    }
+    .lightbox-panel img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .lightbox-panel figcaption {
+      padding: 16px;
+      font-size: 0.95rem;
+      color: #111827;
+      background: #f8fafc;
+    }
+    .lightbox-download {
+      display: inline-block;
+      margin-top: 12px;
+      color: #1d4ed8;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .lightbox-download:hover {
+      text-decoration: underline;
+    }
+    #geotiff-status {
+      position: absolute;
+      left: 50%;
+      bottom: 32px;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: rgba(15, 23, 42, 0.82);
+      color: #f8fafc;
+      padding: 8px 18px;
+      border-radius: 20px;
+      font-size: 0.88rem;
+      pointer-events: none;
+      transition: opacity 600ms ease;
+    }
+    #geotiff-status.hidden { opacity: 0; pointer-events: none; }
+    #geotiff-status.loading { animation: pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.45; }
+    }
+    .legend-swatch {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+      font-size: 0.85rem;
+    }
+    .legend-swatch span {
+      display: inline-block;
+      width: 22px;
+      height: 12px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="lightbox" class="lightbox">
+    <div class="lightbox-panel">
+      <button class="lightbox-close" type="button" aria-label="Close">×</button>
+      <figure>
+        <img id="lightbox-image" src="" alt="" />
+        <figcaption>
+          <span id="lightbox-caption"></span>
+          <br />
+          <a id="lightbox-download" class="lightbox-download" href="#" download>Download full size image</a>
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+  <header>
+    <h1>Lake Champlain</h1>
+    <p>LiDAR contours (VCGI) + CHIRP survey lines. Click a red segment to view sonar imagery.</p>
+  </header>
+  <div id="map"></div>
+  <div id="geotiff-status" class="loading">Loading LiDAR contours…</div>
+  <div class="legend">
+    <strong>Layers</strong>
+    <div class="legend-swatch"><span style="background:#c8d8a8;border:1px solid #6b8e23"></span> LiDAR contours</div>
+    <div class="legend-swatch" style="margin-top:6px"><span style="background:#fecdd3;border:1px solid #e11d48"></span> CHIRP segment</div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-imageoverlay-rotated@0.2.1/Leaflet.ImageOverlay.Rotated.js"></script>
+  <script src="https://unpkg.com/esri-leaflet@3/dist/esri-leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([44.58, -73.20], 13);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: 'Map data © <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
+      maxZoom: 18,
+    }).addTo(map);
+
+    const overlayImageUrl = 'MallettsBay-Test-for-TomW-300dpi.jpg';
+    const overlayTopLeft = [44.629348607955876, -73.33820881951804];
+    const overlayTopRight = [44.62612515805877, -73.1298064345284];
+    const overlayBottomLeft = [44.54744791703338, -73.34054140125224];
+
+    L.imageOverlay.rotated(overlayImageUrl, overlayTopLeft, overlayTopRight, overlayBottomLeft, {
+      opacity: 0.6,
+      interactive: false,
+      attribution: 'Source: GeoTIFF-derived overlay',
+    }).addTo(map);
+
+    function openLightbox(imageUrl, captionText) {
+        console.log('Opening lightbox for:', imageUrl);
+      const lightbox = document.getElementById('lightbox');
+      const image = document.getElementById('lightbox-image');
+      const caption = document.getElementById('lightbox-caption');
+      const downloadLink = document.getElementById('lightbox-download');
+      image.src = imageUrl;
+      image.alt = captionText;
+      caption.textContent = captionText;
+      downloadLink.href = imageUrl;
+      downloadLink.setAttribute('download', imageUrl.split('/').pop());
+      lightbox.classList.add('visible');
+    }
+
+    function closeLightbox() {
+      const lightbox = document.getElementById('lightbox');
+      lightbox.classList.remove('visible');
+      const image = document.getElementById('lightbox-image');
+      image.src = '';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const lightbox = document.getElementById('lightbox');
+      const closeButton = document.querySelector('.lightbox-close');
+      const lightboxPanel = document.querySelector('.lightbox-panel');
+
+      if (lightbox) {
+        lightbox.addEventListener('click', closeLightbox);
+      }
+      if (lightboxPanel) {
+        lightboxPanel.addEventListener('click', event => event.stopPropagation());
+      }
+      if (closeButton) {
+        closeButton.addEventListener('click', closeLightbox);
+      }
+    });
+
+    const markers = [
+    //   {
+    //     name: 'Burlington, VT',
+    //     coords: [44.4759, -73.2121],
+    //     description: 'Largest city on Lake Champlain and a cultural hub.'
+    //   },
+    //   {
+    //     name: 'Plattsburgh, NY',
+    //     coords: [44.6995, -73.4529],
+    //     description: 'Northern lakeshore city with historic waterfront.'
+    //   },
+    //   {
+    //     name: 'Crown Point, NY',
+    //     coords: [44.0302, -73.3669],
+    //     description: 'Historic peninsula at the lake’s southern tip.'
+    //   },
+    //   {
+    //     name: 'Isle La Motte, VT',
+    //     coords: [44.3791, -73.3239],
+    //     description: 'Island in the southern Champlain Basin known for fossils.'
+    //   }
+    ];
+
+    markers.forEach(({name, coords, description}) => {
+      L.marker(coords).addTo(map)
+        .bindPopup(`<strong>${name}</strong><br>${description}`);
+    });
+
+    function parseCsv(text) {
+      const rows = text.trim().split(/\r?\n/).map(line => line.split(',').map(cell => cell.trim()));
+      const headers = rows.shift();
+      return rows
+        .filter(row => row.length && row[0])
+        .map(row => headers.reduce((acc, header, index) => {
+          acc[header] = row[index] || '';
+          return acc;
+        }, {}));
+    }
+
+    function buildSegmentPolygon(start, end, offsetDegrees = 0.0003) {
+      const dx = end[1] - start[1];
+      const dy = end[0] - start[0];
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const ux = dx / len;
+      const uy = dy / len;
+      const px = -uy * offsetDegrees;
+      const py = ux * offsetDegrees;
+
+      return [
+        [start[0] + py, start[1] + px],
+        [end[0] + py, end[1] + px],
+        [end[0] - py, end[1] - px],
+        [start[0] - py, start[1] - px]
+      ];
+    }
+
+    fetch('All_leg_Distances_MalletsBay.csv')
+      .then(response => response.text())
+      .then(text => {
+        const features = parseCsv(text);
+
+        features.forEach(feature => {
+          const startLat = parseFloat(feature['Lat-Start']);
+          const startLng = parseFloat(feature['Long-Start']);
+          const endLat = parseFloat(feature['Lat-End']);
+          const endLng = parseFloat(feature['Long-End']);
+          if (Number.isNaN(startLat) || Number.isNaN(startLng) || Number.isNaN(endLat) || Number.isNaN(endLng)) {
+            return;
+          }
+
+          const imageBase = feature['File Name'].replace(/^Seafloor_/, '');
+          const imageFile = `${imageBase}.jpg`;
+          const polygon = buildSegmentPolygon([startLat, startLng], [endLat, endLng]);
+
+          const featurePolygon = L.polygon(polygon, {
+            color: '#e11d48',
+            fillColor: '#fecdd3',
+            weight: 1.5,
+            fillOpacity: 0.4,
+          }).addTo(map);
+
+          featurePolygon.on('click', () => {
+            openLightbox(imageFile, `${imageBase} — Start: ${startLat.toFixed(5)}, End: ${endLat.toFixed(5)}`);
+          });
+        });
+      })
+      .catch(error => {
+        console.error('Error loading CSV data:', error);
+      });
+
+    // LiDAR contours via ArcGIS cached MapServer (esri-leaflet)
+    const statusEl = document.getElementById('geotiff-status');
+
+    const elevLayer = L.esri.dynamicMapLayer({
+      url: 'https://maps.vcgi.vermont.gov/arcgis/rest/services/EGC_services/MAP_VCGI_LIDARCONTOURS_SP_CACHE_v1/MapServer',
+      opacity: 0.75,
+    });
+
+    elevLayer.once('load', () => {
+      statusEl.classList.remove('loading');
+      statusEl.classList.add('hidden');
+    });
+
+    elevLayer.on('requesterror', err => {
+      console.error('MapServer error:', err);
+      statusEl.classList.remove('loading');
+      statusEl.textContent = 'Contours layer unavailable';
+    });
+
+    elevLayer.addTo(map);
+  </script>
+</body>
+</html>
